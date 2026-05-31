@@ -105,8 +105,11 @@ in-process with its own model settings and system prompt. This is the
 hub-and-spoke pattern demonstrated by ContentPipelineBot and CoachBot.
 
 **Sub-agent model routing**: sub-agent models are listed separately in
-`BOT_MODEL_MAP_SUBAGENTS` in `src/config.py`, allowing lighter/cheaper models
-for specialist workers.
+`BOT_MODEL_MAP_SUBAGENTS` in `src/config.py`, keyed by the exact name each
+sub-agent passes to `get_model_for_bot()` (for example `outliner`), so a
+specialist worker can run on a lighter or cheaper model than its parent bot.
+A sub-agent that instead looks up its parent bot's name (as CoachBot's do with
+`coachbot`) inherits the parent route and does not appear in the map.
 
 ## Lazy Bot Registry
 

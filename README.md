@@ -86,7 +86,7 @@ flowchart TD
 
 ### Bot Registry
 
-The registry loads each bot on first use with per-bot error isolation. Two of the example bots delegate to specialist sub-agents exposed as tools - the agent-as-a-tool, hub-and-spoke pattern.
+The registry loads each bot on first use with per-bot error isolation. ContentPipelineBot and CoachBot are hub-and-spoke routers that delegate to several specialist sub-agents exposed as tools; CreatorOps embeds a single sub-LLM (the reply drafter) inside one tool. All three use the agent-as-a-tool pattern.
 
 ```mermaid
 graph TD
@@ -105,6 +105,7 @@ graph TD
     CB --> CB1["session_logger_agent"]
     CB --> CB2["progress_tracker_agent"]
     CB --> CB3["goal_planner_agent"]
+    CO --> CO1["creatorops_drafter<br/>sub-LLM reply drafter"]
 ```
 
 ## Example Bots

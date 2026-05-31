@@ -128,17 +128,17 @@ BOT_MODEL_MAP = {
     "aria": "openrouter",               # persistent personal assistant
 }
 
-# Sub-agents dispatched as tools - route to a separate provider if desired.
+# Sub-agents and sub-LLM tools, keyed by the exact name each passes to
+# get_model_for_bot(). These resolve ahead of the default, so a specialist
+# worker can run on a lighter/cheaper model than its parent bot. CoachBot's
+# sub-agents look up the parent "coachbot" name and so inherit its route
+# rather than appearing here.
 BOT_MODEL_MAP_SUBAGENTS: dict[str, str] = {
-    "contentpipelinebot_outliner": "mistral",
-    "contentpipelinebot_chapter_marker": "mistral",
-    "contentpipelinebot_description_seo": "mistral",
-    "contentpipelinebot_hook_forge": "mistral",
-    "contentpipelinebot_retention_analyzer": "mistral",
-    "contentpipelinebot_script_outliner": "mistral",
-    "coachbot_session_logger": "mistral",
-    "coachbot_progress_tracker": "mistral",
-    "coachbot_goal_planner": "mistral",
+    "outliner": "mistral",            # ContentPipelineBot specialist
+    "chapter_marker": "mistral",      # ContentPipelineBot specialist
+    "retention_analyzer": "mistral",  # ContentPipelineBot specialist
+    "seo_describer": "mistral",       # ContentPipelineBot specialist
+    "creatorops_drafter": "mistral",  # CreatorOps sub-LLM reply drafter
 }
 
 # --- Credential validation per bot ---
