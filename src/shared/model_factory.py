@@ -4,9 +4,11 @@ Model factory - returns the right LLM client for each bot.
 Routing is driven by config.BOT_MODEL_MAP. Anything not listed defaults
 to Mistral.
 
-NOTE: The local Ollama path is not in the default routing map.
-To enable self-hosted inference, set OLLAMA_URL in .env and add an
-OllamaCompatClient wrapper plus an "ollama" branch here.
+Providers: openrouter, gemini, mistral, and ollama (self-hosted, local).
+Ollama is wired but off by default in BOT_MODEL_MAP - it runs entirely on
+CPU and is slower than the hosted providers. To use it, set OLLAMA_URL in
+.env, uncomment the ollama service in docker-compose.yml, and route a bot
+to "ollama" in BOT_MODEL_MAP.
 """
 
 from openai import AsyncOpenAI
@@ -50,6 +52,15 @@ def _get_openrouter():
     return _clients["openrouter"]
 
 
+def _get_ollama():
+    if "ollama" not in _clients:
+        _clients["ollama"] = AsyncOpenAI(
+            base_url=settings.ollama_url.rstrip("/") + "/v1",
+            api_key="ollama",  # Ollama ignores the key, but the client requires one
+        )
+    return _clients["ollama"]
+
+
 def _resolve_provider(bot_name: str) -> str:
     """Pick provider from BOT_MODEL_MAP first, fall back to BOT_MODEL_MAP_SUBAGENTS."""
     if bot_name in BOT_MODEL_MAP:
@@ -67,6 +78,8 @@ def get_model_for_bot(bot_name: str) -> OpenAIChatCompletionsModel:
         return OpenAIChatCompletionsModel(model=settings.gemini_model_id, openai_client=_get_gemini())
     if provider == "openrouter":
         return OpenAIChatCompletionsModel(model=settings.openrouter_model_id, openai_client=_get_openrouter())
+    if provider == "ollama":
+        return OpenAIChatCompletionsModel(model=settings.ollama_model_id, openai_client=_get_ollama())
     # default: mistral
     return OpenAIChatCompletionsModel(model=settings.mistral_model_id, openai_client=_get_mistral())
 

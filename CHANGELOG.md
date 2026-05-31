@@ -2,6 +2,14 @@
 
 Notable changes to Meridian. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 2026-06-01
+
+### Added
+- Restored the Ollama provider branch in `src/shared/model_factory.py`, with an `ollama_model_id` setting (default `llama3`), so a bot routed to `ollama` uses the local self-hosted endpoint instead of silently falling back to Mistral. Ollama stays off by default in `BOT_MODEL_MAP`; it runs on CPU and is slower than the hosted providers, so it is opt-in via `OLLAMA_URL`.
+
+### Fixed
+- Added the missing `gemini` entry to the provider-list comment in `src/config.py`.
+
 ## 2026-05-31
 
 ### Added

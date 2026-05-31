@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # Ollama (optional local model).
     # Uncomment the ollama service in docker-compose.yml to enable.
     ollama_url: str = ""
+    ollama_model_id: str = "llama3"
 
     # Table store (optional row-based external store).
     # Only needed if you use shared/tablestore.py in your own bots.
@@ -115,6 +116,7 @@ def _validate_database_url() -> None:
 # --- Per-bot model routing ---
 # Each bot gets routed to one provider. Add your bots here.
 # - "openrouter": OpenRouter aggregator
+# - "gemini": Google Gemini (OpenAI-compatible endpoint)
 # - "mistral": Mistral (default for unlisted bots)
 # - "ollama": local model (set OLLAMA_URL and uncomment ollama in docker-compose)
 BOT_MODEL_MAP = {
