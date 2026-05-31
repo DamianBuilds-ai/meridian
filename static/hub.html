@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian Hub</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0a0a0f;
+  --card: #12121a;
+  --border: #1e1e2e;
+  --text: #c8c8d0;
+  --text-dim: #666;
+  --gold: #e0c068;
+  --green: #6bff8b;
+  --red: #ff6b6b;
+  --blue: #6bb5ff;
+  --purple: #bb88ff;
+  --orange: #ffa94d;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace; font-size: 12px; }
+.header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.header h1 { color: var(--gold); font-size: 16px; letter-spacing: 1px; }
+.header .status { display: flex; gap: 12px; align-items: center; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.header .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.header .dot.off { background: var(--red); }
+
+.layout { display: grid; grid-template-columns: 1fr 320px; height: calc(100vh - 45px); }
+.main { overflow-y: auto; padding: 12px; }
+.sidebar { border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+
+/* Bot Grid */
+.bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.bot-card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; cursor: pointer; transition: border-color 0.2s, transform 0.1s; position: relative; overflow: hidden; }
+.bot-card:hover { border-color: var(--gold); transform: translateY(-1px); }
+.bot-card.expanded { grid-column: 1 / -1; }
+.bot-card .bot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.bot-card .bot-name { font-size: 13px; font-weight: bold; }
+.bot-card .bot-domain { color: var(--text-dim); font-size: 10px; }
+.bot-card .bot-tools { color: var(--text-dim); font-size: 10px; margin-top: 4px; }
+.bot-card .tool-count { font-size: 18px; font-weight: bold; position: absolute; top: 8px; right: 10px; opacity: 0.15; }
+.bot-card .bot-pulse { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.bot-card .mermaid-container { display: none; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.bot-card.expanded .mermaid-container { display: block; }
+.bot-card .mermaid-container .mermaid { background: transparent !important; }
+.bot-card .mermaid-container svg { max-width: 100%; }
+
+/* Content Pipeline */
+.pipeline-section { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+.pipeline-section h2 { color: var(--gold); font-size: 12px; margin-bottom: 6px; }
+.pipeline-stats { display: flex; gap: 16px; }
+.pipeline-stat { text-align: center; }
+.pipeline-stat .num { font-size: 20px; font-weight: bold; color: var(--gold); }
+.pipeline-stat .lbl { font-size: 9px; color: var(--text-dim); text-transform: uppercase; }
+
+/* Domain Health */
+.health-section { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+.health-section h2 { color: var(--gold); font-size: 12px; margin-bottom: 6px; }
+.health-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; }
+.health-row .domain-name { color: var(--text); }
+.health-row .health-badge { padding: 1px 6px; border-radius: 3px; font-size: 9px; }
+.health-row .health-badge.healthy { background: #153a1a; color: var(--green); }
+.health-row .health-badge.degraded { background: #3a2a15; color: var(--orange); }
+.health-row .health-badge.broken { background: #3a1515; color: var(--red); }
+
+/* Live Feed (Sidebar) */
+.feed-header { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.feed-header h2 { color: var(--gold); font-size: 12px; }
+.feed-header .feed-status { font-size: 10px; }
+.feed-list { flex: 1; overflow-y: auto; padding: 4px; }
+.feed-item { padding: 6px 8px; border-bottom: 1px solid #0e0e16; font-size: 10px; }
+.feed-item .feed-time { color: var(--text-dim); font-size: 9px; }
+.feed-item .feed-bot { font-weight: bold; }
+.feed-item .feed-tool { color: var(--purple); }
+.feed-item .feed-msg { color: var(--text-dim); margin-top: 2px; }
+.feed-empty { color: var(--text-dim); text-align: center; padding: 40px 12px; font-size: 11px; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { height: 300px; border-left: none; border-top: 1px solid var(--border); }
+  .bot-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MERIDIAN HUB</h1>
+  <div class="status">
+    <span style="color:var(--text-dim);font-size:10px" id="bot-count">Loading...</span>
+    <span class="dot" id="gateway-dot"></span>
+    <span style="color:var(--text-dim);font-size:10px" id="feed-indicator">SSE: connecting</span>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="main">
+    <!-- Bot Grid -->
+    <div class="bot-grid" id="bot-grid"></div>
+
+    <!-- Content Pipeline -->
+    <div class="pipeline-section">
+      <h2>CONTENT PIPELINE</h2>
+      <div class="pipeline-stats" id="pipeline-stats">
+        <div class="pipeline-stat"><div class="num" id="p-draft">-</div><div class="lbl">Draft</div></div>
+        <div class="pipeline-stat"><div class="num" id="p-ready">-</div><div class="lbl">Ready</div></div>
+        <div class="pipeline-stat"><div class="num" id="p-scheduled">-</div><div class="lbl">Scheduled</div></div>
+        <div class="pipeline-stat"><div class="num" id="p-published">-</div><div class="lbl">Published</div></div>
+        <div class="pipeline-stat"><div class="num" id="p-total">-</div><div class="lbl">Total</div></div>
+      </div>
+    </div>
+
+    <!-- Domain Health -->
+    <div class="health-section">
+      <h2>DOMAIN HEALTH</h2>
+      <div id="health-list">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Sidebar: Live Feed -->
+  <div class="sidebar">
+    <div class="feed-header">
+      <h2>LIVE FEED</h2>
+      <span class="feed-status" id="feed-status">connecting...</span>
+    </div>
+    <div class="feed-list" id="feed-list">
+      <div class="feed-empty">Waiting for bot activity...<br><br>Events appear here in real-time when bots handle messages and call tools.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+// WARNING: Never put a real token here. The gateway should proxy table store calls server-side.
+// Set TABLE_STORE_TOKEN and TABLE_STORE_URL in your .env and expose them via a /config endpoint.
+const TABLE_STORE_TOKEN = '';
+const TABLE_STORE_URL = '/api/tablestore/rows';  // proxy endpoint; configure in gateway
+const GATEWAY_URL = window.location.origin; // Same origin as hub
+const SSE_URL = `${GATEWAY_URL}/live`;
+const HEALTH_URL = `${GATEWAY_URL}/health`;
+const CONFIG_URL = `${GATEWAY_URL}/config`;  // returns table IDs and other runtime config
+
+// Table IDs loaded from /config at runtime - never hardcoded here.
+let CONTENT_PIPELINE_TABLE_ID = null;
+let DOMAIN_HEALTH_TABLE_ID = null;
+
+// Bot config will be loaded from bots_config.json
+let BOTS = [];
+
+// ============================================================
+// MERMAID INIT
+// ============================================================
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#1e1e2e',
+    primaryTextColor: '#c8c8d0',
+    primaryBorderColor: '#3a3a4a',
+    lineColor: '#3a3a4a',
+    secondaryColor: '#1a1530',
+    tertiaryColor: '#12121a',
+    fontFamily: 'SF Mono, Fira Code, monospace',
+    fontSize: '11px',
+  }
+});
+
+// ============================================================
+// BOT CARDS + MERMAID GRAPHS
+// ============================================================
+function generateMermaidGraph(bot) {
+  const tools = bot.tools || [];
+  const groups = {};
+  tools.forEach(t => {
+    const g = t.group || 'General';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(t.name);
+  });
+
+  let lines = ['graph LR'];
+  lines.push(`  agent["${bot.name}<br/><small>${bot.model}</small>"]`);
+  lines.push(`  style agent fill:#1a1530,stroke:${bot.color},color:#fff`);
+
+  Object.entries(groups).forEach(([group, toolNames], gi) => {
+    const gid = `g${gi}`;
+    lines.push(`  ${gid}["${group}"]`);
+    lines.push(`  style ${gid} fill:#1e1e2e,stroke:#3a3a4a,color:${bot.color}`);
+    lines.push(`  agent --> ${gid}`);
+    toolNames.forEach((tn, ti) => {
+      const tid = `${gid}t${ti}`;
+      lines.push(`  ${gid} --> ${tid}["${tn}"]`);
+      lines.push(`  style ${tid} fill:#12121a,stroke:#2a2a3a,color:#aaa`);
+    });
+  });
+
+  return lines.join('\n');
+}
+
+function renderBotGrid() {
+  const grid = document.getElementById('bot-grid');
+  grid.innerHTML = '';
+
+  BOTS.forEach((bot, i) => {
+    const card = document.createElement('div');
+    card.className = 'bot-card';
+    card.dataset.bot = bot.id;
+
+    const toolList = (bot.tools || []).map(t => t.name).join(', ');
+    card.innerHTML = `
+      <div class="tool-count">${bot.tool_count || (bot.tools || []).length}</div>
+      <div class="bot-header">
+        <span class="bot-name" style="color:${bot.color}">
+          <span class="bot-pulse" style="background:${bot.color}" id="pulse-${bot.id}"></span>
+          ${bot.name}
+        </span>
+      </div>
+      <div class="bot-domain">${bot.domain}</div>
+      <div class="bot-tools">${bot.role}</div>
+      <div class="bot-tools" style="margin-top:2px;color:#444">${(bot.tools||[]).length} tools: ${toolList.substring(0, 80)}${toolList.length > 80 ? '...' : ''}</div>
+      <div class="mermaid-container">
+        <div class="mermaid" id="mermaid-${bot.id}"></div>
+      </div>
+    `;
+
+    card.addEventListener('click', async () => {
+      const wasExpanded = card.classList.contains('expanded');
+      // Collapse all
+      document.querySelectorAll('.bot-card').forEach(c => c.classList.remove('expanded'));
+
+      if (!wasExpanded) {
+        card.classList.add('expanded');
+        const mermaidEl = document.getElementById(`mermaid-${bot.id}`);
+        if (!mermaidEl.dataset.rendered) {
+          const graphDef = generateMermaidGraph(bot);
+          const { svg } = await mermaid.render(`mermaid-svg-${bot.id}`, graphDef);
+          mermaidEl.innerHTML = svg;
+          mermaidEl.dataset.rendered = 'true';
+        }
+      }
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+// ============================================================
+// LIVE FEED (SSE)
+// ============================================================
+let eventSource = null;
+const MAX_FEED_ITEMS = 50;
+
+function connectSSE() {
+  const statusEl = document.getElementById('feed-status');
+  const indicatorEl = document.getElementById('feed-indicator');
+  const dotEl = document.getElementById('gateway-dot');
+
+  try {
+    eventSource = new EventSource(SSE_URL);
+
+    eventSource.onopen = () => {
+      statusEl.textContent = 'connected';
+      statusEl.style.color = 'var(--green)';
+      indicatorEl.textContent = 'SSE: live';
+      indicatorEl.style.color = 'var(--green)';
+      dotEl.className = 'dot live';
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'heartbeat') return;
+        addFeedItem(data);
+        pulseBotCard(data.bot);
+      } catch (e) { /* ignore parse errors */ }
+    };
+
+    eventSource.onerror = () => {
+      statusEl.textContent = 'disconnected';
+      statusEl.style.color = 'var(--red)';
+      indicatorEl.textContent = 'SSE: offline';
+      indicatorEl.style.color = 'var(--red)';
+      dotEl.className = 'dot off';
+      eventSource.close();
+      // Reconnect after 5s
+      setTimeout(connectSSE, 5000);
+    };
+  } catch (e) {
+    statusEl.textContent = 'unavailable';
+    dotEl.className = 'dot off';
+  }
+}
+
+function addFeedItem(data) {
+  const list = document.getElementById('feed-list');
+  // Remove empty state
+  const empty = list.querySelector('.feed-empty');
+  if (empty) empty.remove();
+
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+
+  const time = new Date(data.timestamp || Date.now()).toLocaleTimeString('en-AU', { hour12: false });
+  const botColor = BOTS.find(b => b.id === data.bot)?.color || 'var(--text)';
+
+  let content = `<span class="feed-time">${time}</span> `;
+  content += `<span class="feed-bot" style="color:${botColor}">${data.bot}</span> `;
+
+  if (data.type === 'tool_call') {
+    content += `<span class="feed-tool">${data.tool || '?'}</span>`;
+  } else if (data.type === 'message') {
+    content += `<span style="color:var(--blue)">msg</span>`;
+  } else if (data.type === 'response') {
+    content += `<span style="color:var(--green)">reply</span>`;
+  }
+
+  if (data.preview) {
+    content += `<div class="feed-msg">${data.preview.substring(0, 120)}</div>`;
+  }
+
+  item.innerHTML = content;
+  list.prepend(item);
+
+  // Trim old items
+  while (list.children.length > MAX_FEED_ITEMS) {
+    list.removeChild(list.lastChild);
+  }
+}
+
+function pulseBotCard(botId) {
+  const pulse = document.getElementById(`pulse-${botId}`);
+  if (pulse) {
+    pulse.style.boxShadow = `0 0 8px ${pulse.style.background}`;
+    setTimeout(() => { pulse.style.boxShadow = 'none'; }, 1500);
+  }
+}
+
+// ============================================================
+// CONTENT PIPELINE
+// ============================================================
+async function loadContentPipeline() {
+  if (!CONTENT_PIPELINE_TABLE_ID) {
+    document.getElementById('p-total').textContent = '?';
+    return;
+  }
+  try {
+    const resp = await fetch(`${TABLE_STORE_URL}/table/${CONTENT_PIPELINE_TABLE_ID}/?user_field_names=true&size=200`, {
+      headers: { 'Authorization': `Token ${TABLE_STORE_TOKEN}` }
+    });
+    const data = await resp.json();
+    const rows = data.results || [];
+
+    const counts = { draft: 0, ready: 0, scheduled: 0, published: 0 };
+    rows.forEach(r => {
+      const status = (r.status?.value || r.status || '').toLowerCase();
+      if (status in counts) counts[status]++;
+    });
+
+    document.getElementById('p-draft').textContent = counts.draft;
+    document.getElementById('p-ready').textContent = counts.ready;
+    document.getElementById('p-scheduled').textContent = counts.scheduled;
+    document.getElementById('p-published').textContent = counts.published;
+    document.getElementById('p-total').textContent = rows.length;
+  } catch (e) {
+    document.getElementById('p-total').textContent = '!';
+  }
+}
+
+// ============================================================
+// DOMAIN HEALTH
+// ============================================================
+async function loadDomainHealth() {
+  if (!DOMAIN_HEALTH_TABLE_ID) {
+    document.getElementById('health-list').textContent = 'Config not loaded';
+    return;
+  }
+  try {
+    const resp = await fetch(`${TABLE_STORE_URL}/table/${DOMAIN_HEALTH_TABLE_ID}/?user_field_names=true&size=30`, {
+      headers: { 'Authorization': `Token ${TABLE_STORE_TOKEN}` }
+    });
+    const data = await resp.json();
+    const rows = (data.results || []).filter(r => r.domain);
+
+    const listEl = document.getElementById('health-list');
+    listEl.innerHTML = '';
+
+    rows.sort((a, b) => {
+      const order = { broken: 0, degraded: 1, needs_attention: 2, active: 3, dormant: 4 };
+      const sa = (a.health?.value || a.status?.value || 'active');
+      const sb = (b.health?.value || b.status?.value || 'active');
+      return (order[sa] || 3) - (order[sb] || 3);
+    });
+
+    rows.forEach(r => {
+      const health = r.health?.value || 'unknown';
+      const status = r.status?.value || 'unknown';
+      const cls = health === 'healthy' ? 'healthy' : health === 'degraded' ? 'degraded' : health === 'broken' ? 'broken' : 'healthy';
+
+      const row = document.createElement('div');
+      row.className = 'health-row';
+      row.innerHTML = `
+        <span class="domain-name">${r.domain}</span>
+        <span class="health-badge ${cls}">${health}</span>
+      `;
+      listEl.appendChild(row);
+    });
+  } catch (e) {
+    document.getElementById('health-list').textContent = 'Failed to load';
+  }
+}
+
+// ============================================================
+// GATEWAY HEALTH CHECK
+// ============================================================
+async function checkGateway() {
+  const dotEl = document.getElementById('gateway-dot');
+  const countEl = document.getElementById('bot-count');
+  try {
+    const resp = await fetch(HEALTH_URL);
+    const data = await resp.json();
+    dotEl.className = 'dot live';
+    countEl.textContent = `${data.bots} bots online`;
+  } catch (e) {
+    dotEl.className = 'dot off';
+    countEl.textContent = 'gateway offline';
+  }
+}
+
+// ============================================================
+// GATEWAY CONFIG (table IDs loaded at runtime from /config)
+// ============================================================
+async function loadConfig() {
+  try {
+    const resp = await fetch(CONFIG_URL);
+    if (!resp.ok) { console.warn('Gateway /config returned', resp.status); return; }
+    const cfg = await resp.json();
+    CONTENT_PIPELINE_TABLE_ID = cfg.content_pipeline_table_id || null;
+    DOMAIN_HEALTH_TABLE_ID = cfg.domain_health_table_id || null;
+  } catch (e) {
+    console.warn('Failed to load gateway config:', e);
+  }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  // Load runtime config (table IDs) from gateway
+  await loadConfig();
+
+  // Load bot config
+  try {
+    const resp = await fetch('/static/bots_config.json');
+    const data = await resp.json();
+    BOTS = data.bots || [];
+  } catch (e) {
+    // Fallback: try relative path
+    try {
+      const resp = await fetch('bots_config.json');
+      const data = await resp.json();
+      BOTS = data.bots || [];
+    } catch (e2) {
+      console.error('Failed to load bots_config.json');
+      BOTS = [];
+    }
+  }
+
+  renderBotGrid();
+  checkGateway();
+  connectSSE();
+  loadContentPipeline();
+  loadDomainHealth();
+
+  // Refresh data periodically
+  setInterval(loadContentPipeline, 60000);
+  setInterval(loadDomainHealth, 60000);
+  setInterval(checkGateway, 30000);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

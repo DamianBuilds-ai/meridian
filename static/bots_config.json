@@ -1,0 +1,34 @@
+{
+  "bots": [
+    {
+      "id": "assistant",
+      "name": "Assistant",
+      "domain": "General",
+      "role": "General-purpose assistant (replace with your bot)",
+      "model": "openrouter",
+      "tool_choice": "required",
+      "tool_count": 2,
+      "tools": [
+        {"name": "search_web", "group": "Research"},
+        {"name": "get_time", "group": "System"}
+      ],
+      "status": "example",
+      "color": "#6bb5ff"
+    },
+    {
+      "id": "weather",
+      "name": "Weather",
+      "domain": "Utilities",
+      "role": "Current conditions and forecast via public weather API",
+      "model": "openrouter",
+      "tool_choice": "required",
+      "tool_count": 2,
+      "tools": [
+        {"name": "get_current_weather", "group": "Weather"},
+        {"name": "get_forecast", "group": "Weather"}
+      ],
+      "status": "example",
+      "color": "#e0c068"
+    }
+  ]
+}

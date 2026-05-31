@@ -1,0 +1,63 @@
+# Secrets - NEVER commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Runtime data
+data/
+exports/
+
+# Docker compose overrides
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Test cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Large model files - never commit
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# UI build artifacts (rebuild from source with: cd ui && npm run build)
+static/ui/

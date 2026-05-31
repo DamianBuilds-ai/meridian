@@ -1,0 +1,204 @@
+# Meridian Bot Gateway - Per-Bot Container Architecture
+# Each bot runs in its own isolated container.
+# Gateway handles shared endpoints (hub, models, chat proxy).
+#
+# Quick reference:
+#   docker compose up -d --build                  # Start all
+#   docker compose up -d --build bot-pipelinebot  # Rebuild one bot
+#   docker compose restart bot-shiftbot           # Restart one bot
+#   docker compose logs -f bot-aria               # Tail one bot's logs
+#
+# To add a new bot:
+#   1. Copy one of the service blocks below (e.g. bot-pipelinebot).
+#   2. Set BOT_NAME to your bot's name.
+#   3. Assign a unique host port (e.g. 8104:8090).
+#   4. Add TELEGRAM_BOT_TOKEN_{NAME} to your .env file.
+#   5. Register the bot in src/agents_registry.py and src/config.py.
+#
+# Optional Ollama sibling (local inference):
+#   The `ollama` service below is commented out. Uncomment to enable
+#   local model inference. Set OLLAMA_URL=http://ollama:11434 in .env
+#   and update BOT_MODEL_MAP in config.py to route desired bots to "ollama".
+
+x-bot-defaults: &bot-defaults
+  build: .
+  restart: unless-stopped
+  networks:
+    - meridian-bots
+  env_file:
+    - .env
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "5m"
+      max-file: "3"
+  healthcheck:
+    test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 15s
+
+services:
+  # --- Example Bot Containers ---
+  # These 7 bots are worked examples demonstrating different framework patterns.
+  # Adapt them or replace with your own bots.
+  # To add a new bot: copy one service block, set BOT_NAME, assign a unique host
+  # port, add TELEGRAM_BOT_TOKEN_{NAME} to .env, and register in agents_registry.py.
+
+  bot-pipelinebot:
+    <<: *bot-defaults
+    container_name: bot-pipelinebot
+    environment:
+      - BOT_NAME=pipelinebot
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8101:8090"
+    volumes:
+      - data-pipelinebot:/app/data
+
+  bot-creatorops:
+    <<: *bot-defaults
+    container_name: bot-creatorops
+    environment:
+      - BOT_NAME=creatorops
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8102:8090"
+    volumes:
+      - data-creatorops:/app/data
+
+  bot-lighthouse:
+    <<: *bot-defaults
+    container_name: bot-lighthouse
+    environment:
+      - BOT_NAME=lighthouse
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8103:8090"
+    volumes:
+      - data-lighthouse:/app/data
+
+  bot-contentpipelinebot:
+    <<: *bot-defaults
+    container_name: bot-contentpipelinebot
+    environment:
+      - BOT_NAME=contentpipelinebot
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8104:8090"
+    volumes:
+      - data-contentpipelinebot:/app/data
+
+  bot-shiftbot:
+    <<: *bot-defaults
+    container_name: bot-shiftbot
+    environment:
+      - BOT_NAME=shiftbot
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8105:8090"
+    volumes:
+      - data-shiftbot:/app/data
+
+  bot-coachbot:
+    <<: *bot-defaults
+    container_name: bot-coachbot
+    environment:
+      - BOT_NAME=coachbot
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8106:8090"
+    volumes:
+      - data-coachbot:/app/data
+
+  bot-aria:
+    <<: *bot-defaults
+    container_name: bot-aria
+    environment:
+      - BOT_NAME=aria
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:8107:8090"
+    volumes:
+      - data-aria:/app/data
+
+  # --- Gateway (shared endpoints, hub dashboard, model proxy) ---
+
+  meridian-gateway:
+    build: .
+    container_name: meridian-gateway
+    restart: unless-stopped
+    networks:
+      - meridian-bots
+    environment:
+      - GATEWAY_MODE=true
+      - TZ=UTC
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - ./static:/app/static:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # --- Shared Services ---
+
+  bot-redis:
+    image: redis:7-alpine
+    container_name: bot-redis
+    restart: unless-stopped
+    networks:
+      - meridian-bots
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - bot-redis-data:/data
+
+  # --- Optional: Ollama local inference sibling ---
+  # Uncomment this service to enable self-hosted model inference.
+  # After starting, load your model:
+  #   docker compose exec ollama ollama pull <your-model>
+  # Then set OLLAMA_URL=http://ollama:11434 in .env and update BOT_MODEL_MAP
+  # in src/config.py to route the desired bots to "ollama".
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: meridian-ollama
+  #   restart: unless-stopped
+  #   networks:
+  #     - meridian-bots
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   # Uncomment to expose GPU (requires nvidia-docker or equivalent):
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: 1
+  #   #           capabilities: [gpu]
+
+volumes:
+  data-pipelinebot:
+  data-creatorops:
+  data-lighthouse:
+  data-contentpipelinebot:
+  data-shiftbot:
+  data-coachbot:
+  data-aria:
+  bot-redis-data:
+  # ollama-data:  # uncomment if using Ollama
+
+networks:
+  meridian-bots:
+    name: meridian-bots
