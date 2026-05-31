@@ -1,5 +1,11 @@
 # Meridian
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.12-3776AB.svg)
+![Telegram](https://img.shields.io/badge/Telegram-aiogram-26A5E4.svg)
+![Deploy](https://img.shields.io/badge/deploy-Docker_Compose-2496ED.svg)
+![Tracing](https://img.shields.io/badge/observability-Langfuse-0A0A0A.svg)
+
 A self-hostable, containerised multi-bot LLM agent framework for Telegram.
 
 Each bot is an independent LLM agent with its own system prompt, toolset, and Docker
@@ -9,9 +15,9 @@ environment variable at runtime determines which agent loads.
 ## What Meridian provides
 
 - **Multi-provider model routing** - OpenRouter (with provider order pinned for
-  `tool_choice="required"` enforcement), Mistral, Gemini, OpenAI, Anthropic, Groq, and
-  Ollama for local inference. Each bot routes to its own provider via `BOT_MODEL_MAP`
-  in `src/config.py`.
+  `tool_choice="required"` enforcement), Mistral, and Gemini, plus Ollama for local
+  inference. Each bot routes to its own provider via `BOT_MODEL_MAP` in `src/config.py`.
+  Groq is wired separately for voice transcription (Whisper), not chat routing.
 - **Mandatory grounded tool-calls** - every bot system prompt enforces tool-first answers.
   The framework ships with the `AGGREGATE_GUARD_BOTS` mechanism to strip freelanced
   aggregate responses when a tool is expected.
@@ -25,6 +31,82 @@ environment variable at runtime determines which agent loads.
 - **Docker Compose deploy** - one `docker compose up` starts the full fleet. Each bot runs
   in its own container; shared services (Redis, optional Ollama) run as siblings.
 
+## Architecture
+
+### Message Flow
+
+Every turn is grounded: `tool_choice=required` forces the agent to call a tool before it can answer, so replies are built from real data rather than free-text guesses. Langfuse tracing is a non-blocking side effect on the way out.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Telegram User
+    participant H as aiogram Handler
+    participant R as Lazy Bot Registry
+    participant A as Agent
+    participant T as Tools
+    participant M as Provider Router
+    participant L as Langfuse
+    User->>H: message
+    H->>R: get_agent_for_bot(bot_name)
+    Note over R: loaded on first use<br/>per-bot error isolation
+    R-->>H: bot agent
+    H->>A: run turn (system + history + msg)
+    Note over A: tool_choice=required<br/>must call a tool first
+    A->>T: grounded tool call
+    T-->>A: result (SQLite / API / sub-agent)
+    A->>M: format reply from tool output
+    M->>M: route provider (OpenRouter / Mistral / Ollama)
+    M-->>A: model response
+    A--)L: emit trace (non-blocking)
+    A-->>H: final reply
+    H-->>User: reply (HTML)
+```
+
+### Multi-Provider Routing
+
+The OpenRouter provider order is pinned to backends that honour `tool_choice="required"`. If one fails (timeout, rate-limit, degraded tool support) the next is tried, with a bot-level fallback to Mistral or a local Ollama model before any error surfaces. Backends that silently degrade `tool_choice` (such as Novita) are deliberately kept out of the pinned order.
+
+```mermaid
+flowchart TD
+    Q["Incoming agent request<br/>tool_choice = required"] --> P1
+    subgraph OR["OpenRouter - provider order pinned for tool_choice=required"]
+        P1["Together"] -->|fail| P2["Fireworks"]
+        P2 -->|fail| P3["SambaNova"]
+        P3 -->|fail| P4["Cerebras"]
+    end
+    P1 -->|ok| OK["Model response"]
+    P2 -->|ok| OK
+    P3 -->|ok| OK
+    P4 -->|ok| OK
+    P4 -->|all failed| ALT["Bot-level fallback<br/>Mistral / Ollama (local)"]
+    ALT -->|ok| OK
+    ALT -->|fail| ERR["Error surfaced to handler"]
+```
+
+### Bot Registry
+
+The registry loads each bot on first use with per-bot error isolation. Two of the example bots delegate to specialist sub-agents exposed as tools - the agent-as-a-tool, hub-and-spoke pattern.
+
+```mermaid
+graph TD
+    REG["Lazy Bot Registry<br/>loaded on first use"]
+    REG --> PB["PipelineBot<br/>sales CRM assistant"]
+    REG --> CO["CreatorOps<br/>creator ops hub"]
+    REG --> LH["Lighthouse<br/>ambient stack monitor"]
+    REG --> CP["ContentPipelineBot<br/>hub-and-spoke router"]
+    REG --> SB["ShiftBot<br/>gig earnings logger"]
+    REG --> CB["CoachBot<br/>orchestrator-only router"]
+    REG --> AR["Aria<br/>persistent assistant"]
+    CP --> CP1["outliner_agent"]
+    CP --> CP2["chapter_marker_agent"]
+    CP --> CP3["retention_analyzer_agent"]
+    CP --> CP4["seo_describer_agent"]
+    CB --> CB1["session_logger_agent"]
+    CB --> CB2["progress_tracker_agent"]
+    CB --> CB3["goal_planner_agent"]
+```
+
 ## Example Bots
 
 The repo ships with seven worked examples. These are templates demonstrating different
@@ -35,7 +117,7 @@ framework patterns - adapt them or replace them with your own bots.
 | **PipelineBot** | `src/pipelinebot/` | Mandatory tool-call grounding, fuzzy contact matching, two-phase delete confirmation in an outbound sales CRM assistant |
 | **CreatorOps** | `src/creatorops/` | Cross-dataset set-intersection and a sub-LLM-as-a-tool pattern; unifies a contact list, content calendar, and subscriber list into one Telegram surface |
 | **Lighthouse** | `src/lighthouse/` | Long-term SQLite memory, system-wide health aggregation, and cross-session relay - an ambient meta-layer bot that reports on your whole automation stack |
-| **ContentPipelineBot** | `src/contentpipelinebot/` | Hub-and-spoke sub-agent delegation: one hub agent routes tasks to six specialist sub-agents exposed as tools (agent-as-a-tool pattern) |
+| **ContentPipelineBot** | `src/contentpipelinebot/` | Hub-and-spoke sub-agent delegation: one hub agent routes tasks to four specialist sub-agents exposed as tools (agent-as-a-tool pattern) |
 | **ShiftBot** | `src/shiftbot/` | Upstream OCR handoff, write-time enrichment, and multi-user data isolation in a mobile-first gig earnings logger |
 | **CoachBot** | `src/coachbot/` | Orchestrator-only router: tool_choice=required, no inline answers, write boundary enforced via three specialist sub-agents for a generic activity/skill practice domain |
 | **Aria** | `src/aria/` | Mandatory warm-start memory hydration, free-slot scheduling, and generic webhook-based workflow triggering in a persistent personal assistant |
