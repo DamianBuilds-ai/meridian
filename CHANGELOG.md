@@ -7,6 +7,9 @@ Notable changes to Meridian. Format follows [Keep a Changelog](https://keepachan
 ### Added
 - Restored the Ollama provider branch in `src/shared/model_factory.py`, with an `ollama_model_id` setting (default `llama3`), so a bot routed to `ollama` uses the local self-hosted endpoint instead of silently falling back to Mistral. Ollama stays off by default in `BOT_MODEL_MAP`; it runs on CPU and is slower than the hosted providers, so it is opt-in via `OLLAMA_URL`.
 
+### Changed
+- Restyled the README architecture diagrams in the Meridian brand (stone and gold) and made them easier to read: the message-flow sequence now uses five lifelines with the registry, `tool_choice`, router and Langfuse steps shown as notes; the multi-provider routing diagram is a single-row fail-chain; the bot registry is a left-to-right tree.
+
 ### Fixed
 - Added the missing `gemini` entry to the provider-list comment in `src/config.py`.
 

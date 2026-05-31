@@ -38,50 +38,47 @@ environment variable at runtime determines which agent loads.
 Every turn is grounded: `tool_choice=required` forces the agent to call a tool before it can answer, so replies are built from real data rather than free-text guesses. Langfuse tracing is a non-blocking side effect on the way out.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontSize':'15px','actorBkg':'#292524','actorBorder':'#D4A847','actorTextColor':'#fafaf9','actorLineColor':'#78716c','signalColor':'#D4A847','signalTextColor':'#fafaf9','sequenceNumberColor':'#1c1917','noteBkgColor':'#3a2f1a','noteTextColor':'#fafaf9','noteBorderColor':'#D4A847','activationBorderColor':'#D4A847','activationBkgColor':'#3a3430','labelBoxBkgColor':'#292524','labelBoxBorderColor':'#D4A847','labelTextColor':'#fafaf9'}}}%%
 sequenceDiagram
     autonumber
-    actor User as Telegram User
+    actor U as Telegram User
     participant H as aiogram Handler
-    participant R as Lazy Bot Registry
     participant A as Agent
     participant T as Tools
-    participant M as Provider Router
-    participant L as Langfuse
-    User->>H: message
-    H->>R: get_agent_for_bot(bot_name)
-    Note over R: loaded on first use<br/>per-bot error isolation
-    R-->>H: bot agent
-    H->>A: run turn (system + history + msg)
-    Note over A: tool_choice=required<br/>must call a tool first
+    participant R as Provider Router
+    U->>H: message
+    Note over H: resolve bot via lazy registry<br/>loaded on first use, per-bot isolation
+    H->>A: run turn (system + history + message)
+    Note over A: tool_choice = required<br/>must call a tool before replying
     A->>T: grounded tool call
     T-->>A: result (SQLite / API / sub-agent)
-    A->>M: format reply from tool output
-    M->>M: route provider (OpenRouter / Mistral / Ollama)
-    M-->>A: model response
-    A--)L: emit trace (non-blocking)
+    A->>R: format reply from tool output
+    Note over R: pick provider, fall back on failure
+    R-->>A: model response
+    Note over A: emit Langfuse trace (non-blocking)
     A-->>H: final reply
-    H-->>User: reply (HTML)
+    H-->>U: reply (HTML)
 ```
 
 ### Multi-Provider Routing
 
-The OpenRouter provider order is pinned to backends that honour `tool_choice="required"`. If one fails (timeout, rate-limit, degraded tool support) the next is tried, with a bot-level fallback to Mistral or a local Ollama model before any error surfaces. Backends that silently degrade `tool_choice` (such as Novita) are deliberately kept out of the pinned order.
+The OpenRouter provider order is pinned to backends that honour `tool_choice="required"`. Each is tried in order and the first to respond returns immediately; the chain below only advances on failure (timeout, rate-limit, degraded tool support). Only if every pinned provider fails does it fall back to Mistral or a local Ollama model, and then to an error. Backends that silently degrade `tool_choice` (such as Novita) are kept out of the pinned order.
 
 ```mermaid
-flowchart TD
-    Q["Incoming agent request<br/>tool_choice = required"] --> P1
-    subgraph OR["OpenRouter - provider order pinned for tool_choice=required"]
-        P1["Together"] -->|fail| P2["Fireworks"]
-        P2 -->|fail| P3["SambaNova"]
-        P3 -->|fail| P4["Cerebras"]
-    end
-    P1 -->|ok| OK["Model response"]
-    P2 -->|ok| OK
-    P3 -->|ok| OK
-    P4 -->|ok| OK
-    P4 -->|all failed| ALT["Bot-level fallback<br/>Mistral / Ollama (local)"]
-    ALT -->|ok| OK
-    ALT -->|fail| ERR["Error surfaced to handler"]
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','primaryColor':'#292524','primaryBorderColor':'#D4A847','primaryTextColor':'#fafaf9','lineColor':'#CBB26A','edgeLabelBackground':'#1c1917'}}}%%
+flowchart LR
+    Q["Request<br/>tool_choice = required"] --> T["Together"]
+    T -->|on failure| F["Fireworks"]
+    F -->|on failure| S["SambaNova"]
+    S -->|on failure| C["Cerebras"]
+    C -->|all failed| FB["Bot-level fallback<br/>Mistral / Ollama"]
+    FB -->|still failing| E["Error to handler"]
+    classDef ok fill:#292524,stroke:#D4A847,color:#fafaf9
+    classDef warn fill:#3a2f1a,stroke:#D4A847,color:#fafaf9
+    classDef err fill:#3a2422,stroke:#b45309,color:#fafaf9
+    class Q,T,F,S,C ok
+    class FB warn
+    class E err
 ```
 
 ### Bot Registry
@@ -89,15 +86,17 @@ flowchart TD
 The registry loads each bot on first use with per-bot error isolation. ContentPipelineBot and CoachBot are hub-and-spoke routers that delegate to several specialist sub-agents exposed as tools; CreatorOps embeds a single sub-LLM (the reply drafter) inside one tool. All three use the agent-as-a-tool pattern.
 
 ```mermaid
-graph TD
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','primaryColor':'#292524','primaryBorderColor':'#D4A847','primaryTextColor':'#fafaf9','lineColor':'#CBB26A','edgeLabelBackground':'#1c1917'}}}%%
+flowchart LR
     REG["Lazy Bot Registry<br/>loaded on first use"]
-    REG --> PB["PipelineBot<br/>sales CRM assistant"]
-    REG --> CO["CreatorOps<br/>creator ops hub"]
-    REG --> LH["Lighthouse<br/>ambient stack monitor"]
-    REG --> CP["ContentPipelineBot<br/>hub-and-spoke router"]
-    REG --> SB["ShiftBot<br/>gig earnings logger"]
-    REG --> CB["CoachBot<br/>orchestrator-only router"]
-    REG --> AR["Aria<br/>persistent assistant"]
+    REG --> PB["PipelineBot - sales CRM"]
+    REG --> CO["CreatorOps - creator ops hub"]
+    REG --> LH["Lighthouse - stack monitor"]
+    REG --> CP["ContentPipelineBot - hub-and-spoke"]
+    REG --> SB["ShiftBot - gig earnings"]
+    REG --> CB["CoachBot - orchestrator router"]
+    REG --> AR["Aria - persistent assistant"]
+    CO --> CO1["creatorops_drafter"]
     CP --> CP1["outliner_agent"]
     CP --> CP2["chapter_marker_agent"]
     CP --> CP3["retention_analyzer_agent"]
@@ -105,7 +104,10 @@ graph TD
     CB --> CB1["session_logger_agent"]
     CB --> CB2["progress_tracker_agent"]
     CB --> CB3["goal_planner_agent"]
-    CO --> CO1["creatorops_drafter<br/>sub-LLM reply drafter"]
+    classDef bot fill:#292524,stroke:#D4A847,color:#fafaf9
+    classDef sub fill:#231f1d,stroke:#CBB26A,color:#e7e5e4
+    class PB,CO,LH,CP,SB,CB,AR bot
+    class CO1,CP1,CP2,CP3,CP4,CB1,CB2,CB3 sub
 ```
 
 ## Example Bots
